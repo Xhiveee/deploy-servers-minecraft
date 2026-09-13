@@ -1,110 +1,114 @@
+apt-get update && apt-get upgrade -y && apt autoremove -y
+timedatectl set-timezone Europe/Moscow
+hostnamectl set-hostname name
+### UFW (фаервол)
+ufw default deny incoming
+ufw default allow outgoing 
+ufw allow 6767/tcp comment "ssh"
+ufw allow 80/tcp comment "http"
+ufw allow 443/tcp comment "https"
+ufw allow 23333/tcp comment "mcs-web"
+nano /etc/ssh/sshd_config
+#### Убрать IPV 6
+nano /etc/default/ufw
+ufw enable
+### Crowdsec (аналог Fail2Ban)
+curl -s https://install.crowdsec.net | sh
+apt update
+apt install crowdsec -y
+cscli collections install crowdsecurity/sshd
+apt install crowdsec-firewall-bouncer-iptables -y
+cscli collections list
+cscli bouncers list
+cscli metrics
+cscli alerts list
+cscli decisions list
 
-# 1. ОБНОВЛЕНИЕ СИСТЕМЫ
-`apt update`                    # Получить обновления пакетов
-`apt upgrade -y`            # Установить обновления (без подтверждения)
+### Автообновления
+apt install unattended-upgrades -y
+dpkg-reconfigure --priority=low unattended-upgrades
+### Базовые пакеты
+apt install -y btop nano curl wget unzip ufw
 
-# 2. БАЗОВЫЕ УТИЛИТЫ
-`apt install -y htop`         # Мониторинг нагрузки на сервер
-`apt install -y nano`         # Текстовый редактор
+# Librespeed (аналог SpeedTest)
 
-# 3. FIREWALL
-`apt install -y ufw`                               # Установка UFW
-`sudo ufw default deny incoming`        # Запретить все входящие по умолчанию
-`sudo ufw default allow outgoing`       # Разрешить все исходящие
-`sudo ufw allow 22/tcp`                          # SSH (обязательно!)
-`sudo ufw allow 32364/tcp`                    # sFTP/SSH на кастомном порту
-`sudo ufw allow 25565/tcp`                    # Minecraft сервер
-`sudo ufw enable`                                     # Включить фаервол
-`sudo ufw disable`                                   # Выключить UFW (если нужно) 
-
-
-# =======================
-
-
-# 4. FAIL2BAN
-`apt install -y fail2ban`
-
-# Создаем локальную конфигурацию
-`sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local`
-
-# Настройка защиты SSH (редактируем jail.local)
-`sudo nano /etc/fail2ban/jail.local`
-
-В секции [sshd] изменить:
- enabled = true
- port = 22,32364          # ваши SSH порты
- filter = sshd
- logpath = /var/log/auth.log
- maxretry = 3                # бан после 3 попыток
- bantime = 3600           # бан на 1 час (в секундах)
- findtime = 600             # окно времени для подсчета попыток
-
-# Перезапуск и автозагрузка
-`sudo systemctl enable fail2ban`
-`sudo systemctl restart fail2ban`
-`sudo fail2ban-client status`               # Проверить статус
-`sudo fail2ban-client status sshd`       # Проверить статус SSH защиты
-
-# SSH (БЕЗОПАСНАЯ НАСТРОЙКА) 
-`sudo nano /etc/ssh/sshd_config`
-
-# РЕКОМЕНДУЕМЫЕ ИЗМЕНЕНИЯ:
- Port 32364                                # Сменить порт (опционально)
- PermitRootLogin no                 # Запретить вход root
- PasswordAuthentication yes    # или no (если используете ключи)
- MaxAuthTries 3                        # Макс. попыток авторизации
- AllowUsers ник1 ник2             # Разрешить только конкретных пользователей
-
-`sudo service ssh restart`             # Перезапуск SSH
-`sudo systemctl status ssh`          # Проверка статуса
+wget https://github.com/librespeed/speedtest-cli/releases/download/v1.0.12/librespeed-cli_1.0.12_linux_amd64.tar.gz
+tar -xzf librespeed-cli_1.0.12_linux_amd64.tar.gz
+mv librespeed-cli /usr/local/bin/
+chmod +x /usr/local/bin/librespeed-cli
+librespeed-cli
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
 
 
-# =======================
+# MCSmanger (через Docker + папка серверы)
 
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
 
-# 5. ПОЛЬЗОВАТЕЛИ (БЕЗОПАСНЫЙ МЕТОД) 
+mkdir -p /opt/mcsmanager
+cd /opt/mcsmanager
+nano docker-compose.yml
+```
+services:
+  web:
+    image: githubyumao/mcsmanager-web:latest
+    container_name: mcsm-web
+    restart: unless-stopped
+    ports:
+      - "23333:23333"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./web/data:/opt/mcsmanager/web/data
+      - ./web/logs:/opt/mcsmanager/web/logs
 
+  daemon:
+    image: githubyumao/mcsmanager-daemon:latest
+    container_name: mcsm-daemon
+    restart: unless-stopped
+    ports:
+      - "24444:24444"
+    environment:
+      - MCSM_DOCKER_WORKSPACE_PATH=/opt/servers
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./daemon/data:/opt/mcsmanager/daemon/data
+      - ./daemon/logs:/opt/mcsmanager/daemon/logs
+      - /opt/servers:/opt/servers
+      - /var/run/docker.sock:/var/run/docker.sock
+```
+mkdir -p /opt/servers
+docker compose up -d
+docker logs mcsm-web
+docker logs mcsm-daemon
+docker exec -it mcsm-daemon sh
+cat /opt/mcsmanager/daemon/data/Config/global.json
+docker ps
+docker restart mcsm-web
+docker restart mcsm-daemon
+docker start mcsm-web
+docker start mcsm-daemon
+docker stop mcsm-web
+docker stop mcsm-daemon
 
-# Создание обычного пользователя 
-`sudo useradd -m -s /bin/bash ник`      # -m создает домашнюю папку /home/ник
-`sudo passwd ник`                        # Установить пароль (вводите 2 раза)
+# Передача файлов
+Сжать
+tar -czf /opt/servers_backup.tar.gz -C /opt servers/
+tar -xzf /opt/servers_backup.tar.gz -C /
+Быстро
+tar -cf /opt/servers_backup.tar -C /opt servers/
+tar -xf /opt/servers_backup.tar -C /
 
-# Добавление в группу sudo (для админских прав)
-`sudo usermod -aG sudo ник`              # Дать права sudo
+apt install -y git g++ make zlib1g-dev libssl-dev
+git clone https://github.com/eeertekin/bbcp.git
+cd bbcp/src
+make
+cp ../bin/amd64_linux/bbcp /usr/local/bin/
+bbcp --version
 
-# Проверка
-`groups ник`                             # Проверить группы пользователя
-`su - ник`                               # Переключиться на пользователя
-`sudo whoami`                            # Должно вывести "root" (проверка sudo)
+bbcp -f -r -s 1 -Z 5031:5031 -w 10m -P 5 -v /opt/servers/ root@айпи:/opt/servers/
+bbcp -f -r -s 1 -Z 5031:5031 -w 10m -P 5 -v /opt/servers/test root@1айпи78.63.251.143:/opt/servers/
 
-# Отключение root (после создания sudo-пользователя!)
-`sudo passwd -l root`                    # Заблокировать пароль root (безопасно)
- *или полное отключение входа root через SSH (см. выше PermitRootLogin no)*
-
-# Удаление пользователя (если нужно)
-`sudo userdel ник`                     # Удалить пользователя
-`sudo userdel -r ник`                 # Удалить пользователя и его домашнюю папку
-
-
-# =======================
-
-
-# 6. УСТАНОВКА MCSMANAGER
-`sudo su -c "wget -qO- https://script.mcsmanager.com/setup.sh | bash"` # скрипт установки
-# Сначала запустите службу демона панели.
-`systemctl start mcsm-daemon.service`
-# Затем запустите веб-службу панели.
-`systemctl start mcsm-web.service`
-
-# Команда перезапуска панели
-`systemctl restart mcsm-daemon.service`
-`systemctl restart mcsm-web.service`
-
-# Команда остановки панели
-`systemctl stop mcsm-web.service`
-`systemctl stop mcsm-daemon.service`
-
-# Автозапуск MCSManager при загрузке системы
-`systemctl enable mcsm-web.service`
-`systemctl enable mcsm-daemon.service`
-
+```
+bbcp -f -s 16 -w 10m -P 5 -v /opt/mcsmanager/daemon/test/test.zip root@айпи:/opt/servers/test
+```
